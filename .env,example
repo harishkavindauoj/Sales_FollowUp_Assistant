@@ -1,0 +1,10 @@
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+AWS_DEFAULT_REGION=us-east-1
+
+# Application Configuration
+LOG_LEVEL=INFO
+BEDROCK_TIMEOUT=8
+MAX_RETRIES=2
+MODEL_TEMPERATURE=0.2
