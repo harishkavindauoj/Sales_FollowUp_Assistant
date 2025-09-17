@@ -311,7 +311,7 @@ sales-followup-assistant/
 
 ## 📝 License
 
-This project is created for demonstration purposes as part of an AI Engineer position assignment.
+MIT License
 
 ---
 

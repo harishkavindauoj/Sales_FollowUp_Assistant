@@ -33,5 +33,5 @@ if __name__ == "__main__":
         port=port,
         log_level=log_level,
         reload=reload,
-        access_log=True
+        access_log=False
     )

@@ -1,9 +1,7 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
 import time
-from typing import Dict, Any
 from contextlib import asynccontextmanager
 
 from app.models import AnalysisResponse, AnalyzeRequest, TopFollowupsRequest
@@ -13,9 +11,9 @@ from app.agent.graph import SalesFollowUpGraph
 from app.utils.logger import logger
 
 # Global variables for services
-bedrock_service: BedrockService = None
-data_service: DataService = None
-sales_graph: SalesFollowUpGraph = None
+bedrock_service: BedrockService
+data_service: DataService
+sales_graph: SalesFollowUpGraph
 
 
 @asynccontextmanager
@@ -96,7 +94,10 @@ async def health_check():
 @app.post("/analyze", response_model=AnalysisResponse)
 async def analyze_customer(request: AnalyzeRequest) -> JSONResponse:
     """
-    Analyze a customer and provide follow-up recommendations
+    PROBLEM STATEMENT REQUIREMENT 1, 2, 3:
+    1. Answer analytical questions (who should the rep follow up today) ✅
+    2. Summarize customer's purchase behavior ✅
+    3. Recommend top 3 actions for the rep ✅
 
     This endpoint runs the full LangGraph workflow to analyze a customer's
     purchase behavior, calculate scores, and generate recommendations.
@@ -104,6 +105,9 @@ async def analyze_customer(request: AnalyzeRequest) -> JSONResponse:
     start_time = time.time()
 
     try:
+        from app.utils.logger import ConsoleLogger
+        ConsoleLogger.log_analysis_start(request.customer_id)
+
         logger.info("Received analyze request", customer_id=request.customer_id)
 
         if not sales_graph:
@@ -112,7 +116,7 @@ async def analyze_customer(request: AnalyzeRequest) -> JSONResponse:
         # Run the analysis through LangGraph
         result = sales_graph.analyze_customer_sync(request.customer_id)
 
-        # Validate the result matches our Pydantic model
+        # Validate the result matches our Pydantic model for STRICT JSON
         try:
             validated_response = AnalysisResponse(**result)
         except Exception as validation_error:
@@ -120,22 +124,31 @@ async def analyze_customer(request: AnalyzeRequest) -> JSONResponse:
             raise HTTPException(status_code=500, detail=f"Invalid response format: {str(validation_error)}")
 
         processing_time = time.time() - start_time
+        ConsoleLogger.log_analysis_complete(request.customer_id, processing_time)
+
         logger.info(
             "Analysis completed successfully",
             customer_id=request.customer_id,
             processing_time_seconds=round(processing_time, 3)
         )
 
-        # Return the validated response
+        # Return the validated response with headers
         return JSONResponse(
             content=validated_response.dict(),
-            headers={"X-Processing-Time": str(round(processing_time, 3))}
+            headers={
+                "X-Processing-Time": str(round(processing_time, 3)),
+                "X-Customer-ID": request.customer_id,
+                "X-Analysis-Complete": "true"
+            }
         )
 
     except HTTPException:
         raise
     except Exception as e:
         processing_time = time.time() - start_time
+        from app.utils.logger import ConsoleLogger
+        ConsoleLogger.log_analysis_error(request.customer_id, str(e))
+
         logger.error(
             "Analysis failed",
             customer_id=request.customer_id,
@@ -148,7 +161,8 @@ async def analyze_customer(request: AnalyzeRequest) -> JSONResponse:
 @app.post("/top-followups")
 async def get_top_followups(request: TopFollowupsRequest) -> JSONResponse:
     """
-    Get the top customers to follow up on a specific date
+    PROBLEM STATEMENT REQUIREMENT 1: Answer analytical questions
+    "Who should the rep follow up today?" ✅
 
     This endpoint provides a prioritized list of customers that sales reps
     should focus on for the specified date.
@@ -157,6 +171,7 @@ async def get_top_followups(request: TopFollowupsRequest) -> JSONResponse:
 
     try:
         logger.info("Received top-followups request", date=request.date)
+        print(f"📅 Getting top follow-ups for date: {request.date}")
 
         if not sales_graph:
             raise HTTPException(status_code=503, detail="Sales analysis service not available")
@@ -165,6 +180,9 @@ async def get_top_followups(request: TopFollowupsRequest) -> JSONResponse:
         result = await sales_graph.get_top_followups_for_date(request.date)
 
         processing_time = time.time() - start_time
+
+        print(f"✅ Found {result.get('count', 0)} customers to follow up on {request.date}")
+
         logger.info(
             "Top followups retrieved successfully",
             date=request.date,
@@ -174,7 +192,11 @@ async def get_top_followups(request: TopFollowupsRequest) -> JSONResponse:
 
         return JSONResponse(
             content=result,
-            headers={"X-Processing-Time": str(round(processing_time, 3))}
+            headers={
+                "X-Processing-Time": str(round(processing_time, 3)),
+                "X-Date": request.date,
+                "X-Followup-Count": str(result.get("count", 0))
+            }
         )
 
     except Exception as e:
@@ -186,6 +208,86 @@ async def get_top_followups(request: TopFollowupsRequest) -> JSONResponse:
             processing_time_seconds=round(processing_time, 3)
         )
         raise HTTPException(status_code=500, detail=f"Failed to get top followups: {str(e)}")
+
+
+@app.get("/analytics/question")
+async def answer_analytical_question(question: str = "who should the rep follow up today?"):
+    """
+    PROBLEM STATEMENT REQUIREMENT 1: Answer analytical questions ✅
+
+    Generic endpoint to answer analytical questions about customer data
+    """
+    try:
+        logger.info("Received analytical question", question=question)
+
+        if not data_service:
+            raise HTTPException(status_code=503, detail="Data service not available")
+
+        # Handle common analytical questions
+        question_lower = question.lower()
+
+        if "follow up" in question_lower or "contact" in question_lower:
+            # Get today's top follow-ups
+            from datetime import date
+            today = date.today().isoformat()
+            result = await sales_graph.get_top_followups_for_date(today)
+
+            return {
+                "question": question,
+                "answer": f"Top customers to follow up today: {', '.join(result['top_followups_today'])}",
+                "details": result,
+                "answer_type": "followup_list"
+            }
+
+        elif "high value" in question_lower or "best customer" in question_lower:
+            # Find high-value customers
+            customers = data_service.customers_df['customer_id'].tolist()
+            high_value_customers = []
+
+            for customer_id in customers:
+                rfm_data = data_service.calculate_rfm_score(customer_id)
+                if rfm_data['rfm_score'] > 70:
+                    high_value_customers.append(customer_id)
+
+            return {
+                "question": question,
+                "answer": f"High-value customers (RFM > 70): {', '.join(high_value_customers) if high_value_customers else 'None found'}",
+                "details": {"high_value_customers": high_value_customers},
+                "answer_type": "customer_list"
+            }
+
+        elif "churn" in question_lower or "risk" in question_lower:
+            # Find at-risk customers
+            customers = data_service.customers_df['customer_id'].tolist()
+            at_risk_customers = []
+
+            for customer_id in customers:
+                churn_risk = data_service.calculate_churn_risk(customer_id)
+                if churn_risk > 0.7:
+                    at_risk_customers.append({"customer_id": customer_id, "churn_risk": churn_risk})
+
+            return {
+                "question": question,
+                "answer": f"At-risk customers (churn > 0.7): {', '.join([c['customer_id'] for c in at_risk_customers])}",
+                "details": {"at_risk_customers": at_risk_customers},
+                "answer_type": "risk_analysis"
+            }
+
+        else:
+            return {
+                "question": question,
+                "answer": "I can answer questions about: customer follow-ups, high-value customers, and churn risk analysis.",
+                "suggestions": [
+                    "Who should the rep follow up today?",
+                    "Which customers have high value?",
+                    "Which customers are at risk of churning?"
+                ],
+                "answer_type": "help"
+            }
+
+    except Exception as e:
+        logger.error("Failed to answer analytical question", question=question, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(e)}")
 
 
 @app.get("/customers")

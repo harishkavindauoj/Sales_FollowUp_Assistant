@@ -1,10 +1,23 @@
-# AWS Configuration
+# --- AWS Configuration ---
 AWS_ACCESS_KEY_ID=your_access_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_DEFAULT_REGION=us-east-1
 
-# Application Configuration
+# --- Application Configuration ---
+ENVIRONMENT=development
+HOST=0.0.0.0
+PORT=8000
 LOG_LEVEL=INFO
+RELOAD=true
+
+# --- Model/Agent Settings ---
 BEDROCK_TIMEOUT=8
 MAX_RETRIES=2
 MODEL_TEMPERATURE=0.2
+
+# --- Observability ---
+LOG_DIR=logs
+ENABLE_METRICS=true
+
+# --- Data ---
+DATA_DIR=data

@@ -77,8 +77,8 @@ class SalesFollowUpGraph:
 
     def _merge_analyses_wrapper(self, state: GraphState) -> Dict[str, Any]:
         """Wrapper to merge parallel analysis results"""
-        # Just return an empty dict since the state already contains both analyses
-        # LangGraph will pass through without requiring an update
+        # Just return a minimal update to satisfy LangGraph's requirement
+        # that each node must update at least one state field
         return {"merge_complete": True}
 
     def _generate_summary_wrapper(self, state: GraphState) -> Dict[str, Any]:
