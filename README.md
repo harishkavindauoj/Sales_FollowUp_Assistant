@@ -72,7 +72,7 @@ Fetch Customer Data
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/harishkavindauoj/Sales_FollowUp_Assistant.git
    cd sales-followup-assistant
    ```
 
@@ -315,4 +315,4 @@ MIT License
 
 ---
 
-**Built with ❤️ using LangGraph, AWS Bedrock Nova, and FastAPI**
+
